@@ -5,16 +5,16 @@ using TgToDsChat.BotsApi.Interface;
 
 namespace TgToDsChat.BotsApi.Implementation;
 
-public class TelegramBot : IBot
+public class TelegramBot : Bot
 {
     private TelegramBotClient _bot;
-    //private IBot _forwarderBot;
+    
+    private long _chatId = 0;
 
-    public async Task InitialBot(string token)
+    public TelegramBot(string token)
     {
         using var cts = new CancellationTokenSource();
         _bot = new TelegramBotClient(token, cancellationToken: cts.Token);
-        var me = await _bot.GetMe(cancellationToken: cts.Token);
         _bot.OnMessage += OnMessage;
     }
     
@@ -22,17 +22,37 @@ public class TelegramBot : IBot
     {
         if (msg.Text is null) return;
         var user = msg.From;
-        if (user == null)
+        if (user == null) return;
+
+        if (msg.Text == "/setchat")
         {
+            _chatId = msg.Chat.Id;
+            await _bot.SendMessage(msg.Chat.Id, "This chat connected to bot.");
             return;
         }
 
-        await _bot.SendMessage(user.Id, await GetUserProfilePhotoUrl(user));
-        //await _forwarderBot.SendMessageAsync(new MessageData(user.Username, msg.Text,
-        //    await GetUserProfilePhotoUrl(user)));
+        if (ForwarderBot == null)
+        {
+            await _bot.SendMessage(msg.Chat.Id, "Bot forwarder is not connected.");
+            return;
+        }
+        
+        await ForwarderBot.SendMessageAsync(new MessageData(user.Username, msg.Text,
+            await GetUserProfilePhotoUrl(user)));
+    }
+
+    public override async Task SendMessageAsync(MessageData message)
+    {
+        if (_chatId == 0)
+        {
+            Console.WriteLine("Chat is not connected to " + _bot.BotId);
+            return;
+        }
+
+        await _bot.SendMessage(_chatId, $">`{message.DisplayUserName}`\n{message.Text}");
     }
     
-    async Task<string?> GetUserProfilePhotoUrl(User user)
+    private async Task<string?> GetUserProfilePhotoUrl(User user)
     {
         var photos = await _bot.GetUserProfilePhotosAsync(user.Id);
         if (photos.TotalCount == 0)
@@ -46,10 +66,5 @@ public class TelegramBot : IBot
         string fileUrl = $"https://api.telegram.org/file/bot{_bot.Token}/{file.FilePath}";
 
         return fileUrl;
-    }
-
-    public Task SendMessageAsync(MessageData message)
-    {
-        throw new NotImplementedException();
     }
 }
