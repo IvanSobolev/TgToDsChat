@@ -7,62 +7,56 @@ namespace TgToDsChat.BotsApi.Implementation;
 
 public class TelegramBot : Bot
 {
-    private TelegramBotClient _bot;
-    
-    private long _chatId = 0;
+    private readonly TelegramBotClient _bot;
+    private readonly long _adminId;
+    private long _connectChatId;
 
-    public TelegramBot(string token)
+    public TelegramBot(string connectionString, long adminId = 0)
     {
         using var cts = new CancellationTokenSource();
-        _bot = new TelegramBotClient(token, cancellationToken: cts.Token);
+        _bot = new TelegramBotClient(connectionString, cancellationToken: cts.Token);
         _bot.OnMessage += OnMessage;
+        _adminId = adminId;
     }
     
     async Task OnMessage(Message msg, UpdateType type)
     {
         if (msg.Text is null) return;
+        if (msg.From == null) return;
         var user = msg.From;
-        if (user == null) return;
 
-        if (msg.Text == "/setchat")
+        if (msg.Text == "/setchat" && user.Id == _adminId)
         {
-            _chatId = msg.Chat.Id;
+            _connectChatId = msg.Chat.Id;
             await _bot.SendMessage(msg.Chat.Id, "This chat connected to bot.");
             return;
         }
-
-        if (ForwarderBot == null)
-        {
-            await _bot.SendMessage(msg.Chat.Id, "Bot forwarder is not connected.");
-            return;
-        }
         
-        await ForwarderBot.SendMessageAsync(new MessageData(user.Username, msg.Text,
+        await SendMessageToForwarderAsync(new MessageData(user.FirstName, msg.Text,
             await GetUserProfilePhotoUrl(user)));
     }
 
-    public override async Task SendMessageAsync(MessageData message)
+    protected override async Task SendMessageAsync(MessageData message)
     {
-        if (_chatId == 0)
+        if (_connectChatId == 0)
         {
-            Console.WriteLine("Chat is not connected to " + _bot.BotId);
+            await _bot.SendMessage(_adminId, "Bot is not connected to chat");
             return;
         }
 
-        await _bot.SendMessage(_chatId, $">`{message.DisplayUserName}`\n{message.Text}");
+        await _bot.SendMessage(_connectChatId, $">`{message.DisplayUserName}`\n{message.Text}", parseMode: ParseMode.MarkdownV2);
     }
     
-    private async Task<string?> GetUserProfilePhotoUrl(User user)
+    private async Task<string> GetUserProfilePhotoUrl(User user)
     {
         var photos = await _bot.GetUserProfilePhotosAsync(user.Id);
         if (photos.TotalCount == 0)
-            return null; 
+            return "https://upload.wikimedia.org/wikipedia/commons/thumb/5/59/Minecraft_missing_texture_block.svg/2048px-Minecraft_missing_texture_block.svg.png"; 
 
         var fileId = photos.Photos[0][0].FileId;
 
         var file = await _bot.GetFileAsync(fileId);
 
-        // Формируем URL файла
         string fileUrl = $"https://api.telegram.org/file/bot{_bot.Token}/{file.FilePath}";
 
         return fileUrl;

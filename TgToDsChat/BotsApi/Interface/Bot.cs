@@ -2,10 +2,22 @@
 
 public abstract class Bot
 {
-    protected Bot? ForwarderBot { get; private set; }
-    public abstract Task SendMessageAsync(MessageData message);
+    private Bot? _forwarderBot;
+
+    protected abstract Task SendMessageAsync(MessageData message);
+    
+    protected async Task SendMessageToForwarderAsync(MessageData message)
+    {
+        if (_forwarderBot == null)
+        {
+            await SendMessageAsync(new MessageData("Error", "Bot forwarder is not connected."));
+            return;
+        }
+        
+        await _forwarderBot.SendMessageAsync(message);
+    }
     public void SetForwarder(Bot forwarder)
     {
-        ForwarderBot = forwarder;
+        _forwarderBot = forwarder;
     }
 }
